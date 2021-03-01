@@ -130,4 +130,5 @@ dmypy.json
 
 .idea
 
-Wasserstein GAN.Saved_Model
+Wasserstein GAN.Saved_Model/
+Wasserstein GAN.logs/
