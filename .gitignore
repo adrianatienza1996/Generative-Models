@@ -127,3 +127,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+.idea
+
+Wasserstein GAN.Saved_Model/
+Wasserstein GAN.logs/
