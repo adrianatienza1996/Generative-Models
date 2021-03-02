@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class LinearBlock(nn.Module):
     def __init__(self, c_in, c_out):
@@ -56,7 +57,8 @@ class AdaIN(nn.Module):
 
 class GeneratorMiniBlock(nn.Module):
     def __init__(self, in_chan=512, out_chan=512, w_dim=512, kernel_size=3, stride=1, padding=1):
-        self.conv = nn.Conv2d(in_chan, out_chan, kernel_size, stride=stride, padding=padding)
+        super(GeneratorMiniBlock, self).__init__()
+        self.conv = nn.Conv2d(in_chan, out_chan, kernel_size=kernel_size, stride=stride, padding=padding)
         self.inject_noise = NoiseInjector(out_chan)
         self.adain = AdaIN(out_chan, w_dim)
         self.activation = nn.LeakyReLU(0.2)
@@ -70,19 +72,23 @@ class GeneratorMiniBlock(nn.Module):
 
 
 class GeneratorBlock(nn.Module):
-    def __init__(self, use_upsample=True):
+    def __init__(self, c_in=512, c_out=512, use_upsample=True):
         super(GeneratorBlock, self).__init__()
         self.use_upsaple= use_upsample
         if self.use_upsaple:
-            self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
-        self.miniblock1 = GeneratorMiniBlock()
-        self.miniblock2 = GeneratorMiniBlock
+            self.upsample = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
+        self.miniblock1 = GeneratorMiniBlock(in_chan=c_in, out_chan=c_out)
+        self.miniblock2 = GeneratorMiniBlock(in_chan=c_out, out_chan=c_out)
 
-    def forward (self, x, w, alpha):
-        h = self.upsample if self.use_upsaple else x
-        h2 = self.miniblock1(h, w)
-        h2 = self.miniblock2(h2, w)
-        return h*alpha + h2*(1 - alpha)
+    def upsample_to_match_size(self, smaller_image, bigger_image):
+        return F.interpolate(smaller_image, size=bigger_image.shape[-2:], mode='bilinear')
+
+    def forward(self, x, w, alpha):
+        h = self.upsample(x) if self.use_upsaple else x
+        h1 = self.miniblock1(h, w)
+        h2 = self.miniblock2(h1, w)
+        h1 = self.upsample_to_match_size(h1, h2)
+        return h1*alpha + h2*(1 - alpha)
 
 
 class Generator(nn.Module):
@@ -93,11 +99,11 @@ class Generator(nn.Module):
         self.block1 = GeneratorBlock(use_upsample=False)
         self.block2 = GeneratorBlock()
         self.block3 = GeneratorBlock()
-        self.block4 = GeneratorBlock()
-        self.block5 = GeneratorBlock()
-        self.block6 = GeneratorBlock()
-        self.block7 = GeneratorBlock()
-        self.final_conv = nn.Conv2d(512, 3, kernel_size=1, stride=1, padding=0)
+        self.block4 = GeneratorBlock(c_in=512, c_out=256)
+        self.block5 = GeneratorBlock(c_in=256, c_out=128)
+        self.block6 = GeneratorBlock(c_in=128, c_out=64)
+        self.block7 = GeneratorBlock(c_in=64, c_out=32)
+        self.final_conv = nn.Conv2d(32, 3, kernel_size=1, stride=1, padding=0)
 
     def forward (self, x, w):
         w = self.mapping_noise(w)
@@ -107,7 +113,7 @@ class Generator(nn.Module):
         h = self.block4(h, w, self.alpha_values[3])
         h = self.block5(h, w, self.alpha_values[4])
         h = self.block6(h, w, self.alpha_values[5])
-        h = self.block7(x, h, self.alpha_values[6])
+        h = self.block7(h, w, self.alpha_values[6])
         return self.final_conv(h)
 
     def set_alpha(self, index, value):
