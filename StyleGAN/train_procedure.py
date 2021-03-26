@@ -41,7 +41,7 @@ loader = DataLoader(
     dataset,
     batch_size=batch_size,
     shuffle=True,
-)
+    )
 
 # for tensorboard plotting
 
@@ -50,37 +50,53 @@ fixed_input = torch.zeros(batch_size, 512, 4, 4).to(device)
 writer_real = SummaryWriter(f"logs/GAN/real")
 writer_fake = SummaryWriter(f"logs/GAN/fake")
 step = 0
-adv_criterion = nn.L1Loss()
+epoch_upsizing_model = np.array([0, 15, 30, 45, 60, 75])
 
-for epoch in range(6):
+for epoch in range(100):
     print("Epoch: " + str(epoch))
-    alpha_values = np.linspace(0, 1, len(loader))
-    for batch_idx, (x, _) in enumerate(tqdm(iter(loader))):
-        if (epoch % 2 == 0):
-            gen.set_alpha(epoch, 1 - alpha_values[batch_idx])
-            dis.set_alpha(epoch, 1 - alpha_values[batch_idx])
+    print("Generator alpha values: " + str(gen.alpha_values))
+    print("Discriminator alpha values: " + str(dis.alpha_values))
 
-            gen.set_alpha(epoch + 1, 1 - alpha_values[batch_idx])
-            dis.set_alpha(epoch + 1, 1 - alpha_values[batch_idx])
+    alpha_values = np.array([0.75, 0.5, 0.25, 0], dtype=np.float32)
+    idx_set_alpha = np.int32(np.quantile(np.arange(len(loader) * 15), [0, 0.25, 0.5, 0.75]))
+
+    for batch_idx, (x, _) in enumerate(tqdm(iter(loader))):
+
+        if epoch in epoch_upsizing_model:
+            level_to_update = np.argmax(epoch_upsizing_model == epoch)
+            counter_iter = 0
+
+            if counter_iter in idx_set_alpha:
+                gen.set_alpha(level_to_update, alpha_values[batch_idx == idx_set_alpha][0])
+                dis.set_alpha(level_to_update, alpha_values[batch_idx == idx_set_alpha][0])
 
         x = x.to(device)
         cur_batch_size = x.shape[0]
+
+        # Training Discriminator
+        dis.zero_grad()
         z = torch.randn((cur_batch_size, 512), device=device)
+        fake = gen(fixed_input, z)
+        critic_real = dis(x).reshape(-1)
+        critic_fake = dis(fake).reshape(-1)
+        gp = gradient_penalty(dis, x, fake, device=device)
+        loss_critic = (
+                -(torch.mean(critic_real) - torch.mean(critic_fake)) + 10 * gp)
 
         dis.zero_grad()
-        fake = gen(fixed_input, z)
-        crit_loss = get_crit_loss(fake, x, dis, adv_criterion)
-
-        crit_loss.backward(retain_graph=True)
+        loss_critic.backward(retain_graph=True)
         opt_critic.step()
 
-        for _ in range(2):
-            gen.zero_grad()
-            z2 = torch.randn((cur_batch_size, 512), device=device)
-            fake_2 = gen(fixed_input, z2)
-            gen_loss = get_gen_loss(fake_2, dis, adv_criterion)
-            gen_loss.backward()
-            opt_gen.step()
+        # Training Generator
+        gen.zero_grad()
+        z2 = torch.randn((cur_batch_size, 512), device=device)
+        fake2 = gen(fixed_input, z2)
+        gen_fake = dis(fake2).reshape(-1)
+        loss_gen = -torch.mean(gen_fake)
+        loss_gen.backward()
+        opt_gen.step()
+
+        counter_iter += 1
 
         # Print losses occasionally and print to tensorboard
         if batch_idx % 100 == 0 and batch_idx > 0:
@@ -94,7 +110,7 @@ for epoch in range(6):
                 writer_fake.add_image("Fake", img_grid_fake, global_step=step)
                 print(
                     f"Epoch [{epoch}/{7}] Batch {batch_idx}/{len(loader)} \
-                    Loss D: {crit_loss:.4f}, loss G: {gen_loss:.4f}"
+                    Loss D: {loss_critic:.4f}, loss G: {loss_gen:.4f}"
                 )
             step += 1
 
