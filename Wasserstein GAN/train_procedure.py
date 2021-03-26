@@ -69,5 +69,3 @@ for epoch in range(5):
 torch.save(gen.to("cpu").state_dict(), "Saved_Model/my_gen.pth")
 torch.save(dis.to("cpu").state_dict(), "Saved_Model/my_dis.pth")
 print("Model Saved")
-
-
