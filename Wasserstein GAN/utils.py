@@ -67,3 +67,4 @@ def get_data (train_csv_path, path, image_size):
     trn = FairFace(train_df, path, image_size=image_size)
     train_loader = DataLoader(trn, batch_size=32, shuffle=True, drop_last=True, collate_fn=trn.collate_fn)
     return train_loader
+
