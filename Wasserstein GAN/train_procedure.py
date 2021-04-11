@@ -6,7 +6,7 @@ from torchsummary import summary
 from torch.utils.tensorboard import SummaryWriter
 from utils import gradient_penalty
 from model import Generator, Discriminator
-from utils import  get_data
+from utils import get_data
 from tqdm import tqdm
 
 
@@ -36,7 +36,7 @@ for epoch in range(5):
             z = torch.randn((cur_batch_size, 25, 2, 2), device=device)
             fake = gen(z)
             critic_real = dis(x).reshape(-1)
-            critic_fake = dis(fake).reshape(-1)
+            critic_fake = dis(fake.detach()).reshape(-1)
             gp = gradient_penalty(dis, x, fake, device=device)
             loss_critic = (
                 -(torch.mean(critic_real) - torch.mean(critic_fake)) + 10 * gp
