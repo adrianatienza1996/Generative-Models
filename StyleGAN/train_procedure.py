@@ -35,7 +35,7 @@ transforms = transforms.Compose([
         mean=[0.485, 0.456, 0.406],
         std=[0.229, 0.224, 0.225])])
 
-batch_size = 10
+batch_size = 16
 dataset = datasets.ImageFolder(root="F:/FFHQ", transform=transforms)
 loader = DataLoader(
     dataset,
@@ -57,7 +57,7 @@ for epoch in range(110):
     print("Discriminator alpha values: " + str(dis.alpha_values))
 
     flag = 1
-    alpha_values = np.array([0.90, 0.80, 0.70, 0.60, 0.50, 0.40, 0.30, 0.20, 0.10, 0.0], dtype=np.float32)
+    alpha_values = np.array([0.90, 0.80, 0.70, 0.60, 0.50, 0.40, 0.30, 0.20, 0.10, 0.00], dtype=np.float32)
     for batch_idx, (x, _) in enumerate(tqdm(iter(loader))):
 
         if epoch in epoch_upsizing_model and flag:
@@ -87,7 +87,7 @@ for epoch in range(110):
         fake = gen(fixed_input, z)
 
         critic_real = dis(x).reshape(-1)
-        critic_fake = dis(fake).reshape(-1)
+        critic_fake = dis(fake.detach()).reshape(-1)
         gp = gradient_penalty(dis, x, fake, device=device)
         loss_critic = (
                 -(torch.mean(critic_real) - torch.mean(critic_fake)) + 10 * gp)
