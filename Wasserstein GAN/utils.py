@@ -9,9 +9,8 @@ import os
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def gradient_penalty(critic, real, fake, device="cpu"):
-    BATCH_SIZE, C, H, W = real.shape
-    alpha = torch.rand((BATCH_SIZE, 1, 1, 1)).repeat(1, C, H, W).to(device)
-    interpolated_images = real * alpha + fake * (1 - alpha)
+    epsilon = torch.rand(len(real), 1, 1, 1, device=device, requires_grad=True)
+    interpolated_images = real * epsilon + fake * (1 - epsilon)
     mixed_scores = critic(interpolated_images)
 
     # Take the gradient of the scores with respect to the images
@@ -50,7 +49,8 @@ class FairFace(Dataset):
     def preprocess_image(self, im):
         im = cv2.resize(im, (self.image_size, self.image_size))
         im = torch.tensor(im).permute(2, 0, 1)
-        im = self.normalize(im / 255.)
+        im = self.normalize(im)
+        print(np.max(im))
         return im[None]
 
     def collate_fn(self, batch):
@@ -62,9 +62,17 @@ class FairFace(Dataset):
         ims = torch.cat(ims).to(device)
         return ims
 
-def get_data (train_csv_path, path, image_size):
+def get_data (train_csv_path, path, image_size, batch_size):
     train_df = pd.read_csv(train_csv_path)
     trn = FairFace(train_df, path, image_size=image_size)
-    train_loader = DataLoader(trn, batch_size=32, shuffle=True, drop_last=True, collate_fn=trn.collate_fn)
+    train_loader = DataLoader(trn, batch_size=batch_size, shuffle=True, drop_last=True, collate_fn=trn.collate_fn)
     return train_loader
+
+def weights_init(m):
+    if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+        torch.nn.init.normal_(m.weight, 0.0, 0.02)
+    if isinstance(m, nn.BatchNorm2d):
+        torch.nn.init.normal_(m.weight, 0.0, 0.02)
+        torch.nn.init.constant_(m.bias, 0)
+
 

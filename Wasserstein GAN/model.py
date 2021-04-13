@@ -5,21 +5,22 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class GeneratorBlock(nn.Module):
-    def __init__(self, c_in, c_out, kernel_size=3, stride=1, padding=1, upsample=True):
+    def __init__(self, c_in, c_out, kernel_size=3, stride=2, padding=1):
         super(GeneratorBlock, self).__init__()
-        self.use_upsample = upsample
-        if self.use_upsample:
-            self.upsample = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False)
-
-        self.conv = nn.Sequential(
-            spectral_norm(nn.Conv2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=False)),
-            nn.LeakyReLU(0.2),
-            spectral_norm(nn.Conv2d(c_out, c_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=False)),
-        )
+        self.conv = nn.ConvTranspose2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding)
+        self.batch = nn.BatchNorm2d(c_out)
+        self.activation = nn.ReLU(inplace=True)
+        self.net = nn.Sequential(
+            nn.Conv2d(c_out, c_out, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(c_out),
+            nn.ReLU(inplace=True))
 
     def forward(self, x):
-        h = self.upsample(x) if self.use_upsample else x
-        return self.conv(h)
+        batch_size, num_channels, w, h = x.shape
+        h = self.conv(x, output_size=(batch_size, num_channels, w * 2, h * 2))
+        h = self.batch(h)
+        h = self.activation(h)
+        return self.net(h)
 
 
 class Generator(nn.Module):
@@ -33,7 +34,9 @@ class Generator(nn.Module):
                 GeneratorBlock(128, 256),   # Output = 32x32
                 GeneratorBlock(256, 256))   # Output = 64x64
 
-        self.final_conv = nn.Conv2d(256, 3, kernel_size=1, stride=1, padding=0)
+        self.final_conv = nn.Sequential(
+                nn.ConvTranspose2d(256, 3, kernel_size=1, stride=1),
+                nn.Tanh())
 
     def forward(self, x):
         h = self.gen(x)
@@ -41,24 +44,22 @@ class Generator(nn.Module):
 
 
 class DiscriminatorBlock(nn.Module):
-    def __init__(self, c_in, c_out, kernel_size=3, padding=1, stride=1, downsizing=True):
+    def __init__(self, c_in, c_out, kernel_size=3, stride=2, padding=1):
         super(DiscriminatorBlock, self).__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=False),
+        self.net = nn.Sequential(
+            nn.utils.spectral_norm(nn.Conv2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding)),
             nn.BatchNorm2d(c_out),
-            nn.ReLU(),
-            nn.Conv2d(c_out, c_out, kernel_size=kernel_size, stride=stride + downsizing, padding=padding, bias=False),
-            nn.BatchNorm2d(c_out))
+            nn.LeakyReLU(0.2, inplace=True))
 
     def forward(self, x):
-        return self.conv(x)
+        return self.net(x)
 
 
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
         self.disc = nn.Sequential(
-            DiscriminatorBlock(3, 16, kernel_size=1, padding=0, downsizing=False),
+            DiscriminatorBlock(3, 16, kernel_size=3, stride=1, padding=1),
             DiscriminatorBlock(16, 32),
             DiscriminatorBlock(32, 64),
             DiscriminatorBlock(64, 128),
